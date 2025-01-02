@@ -1,315 +1,532 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { 
   Upload, 
   File, 
-  Folder, 
-  Plus, 
   Image, 
   Video, 
-  FileText, 
-  Code,
+  FileText,
   Moon,
   Sun,
   Tag,
   X,
-  PlayCircle 
+  Download,
+  Plus,
+  Search,
+  Trash2,
+  Grid,
+  List,
+  AlertTriangle,
+  Info
 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/avi', 'video/mov'];
 
 const IPCSHost = () => {
   const [files, setFiles] = useState([]);
   const [isCreationModalOpen, setIsCreationModalOpen] = useState(false);
   const [selectedContentType, setSelectedContentType] = useState(null);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(true);
   const [selectedFile, setSelectedFile] = useState(null);
   const [textContent, setTextContent] = useState('');
   const [documentTitle, setDocumentTitle] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState('grid');
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [sortBy, setSortBy] = useState('date');
+  const [sortOrder, setSortOrder] = useState('desc');
   const fileInputRef = useRef(null);
-  const videoRef = useRef(null);
 
-  // Types de contenu supportés
   const contentTypes = [
     { 
       type: 'image', 
       icon: <Image className="w-12 h-12 text-blue-500" />,
-      acceptedFormats: 'image/*',
-      description: 'Sélectionnez uniquement des fichiers image (jpg, png, gif, etc.)'
+      acceptedFormats: ALLOWED_IMAGE_TYPES.join(','),
+      description: 'Images (jpg, png, gif, webp)',
+      maxSize: '10MB'
     },
     { 
       type: 'video', 
       icon: <Video className="w-12 h-12 text-green-500" />,
-      acceptedFormats: 'video/*',
-      description: 'Sélectionnez uniquement des fichiers vidéo (mp4, avi, mov, etc.)'
+      acceptedFormats: ALLOWED_VIDEO_TYPES.join(','),
+      description: 'Vidéos (mp4, webm, avi)',
+      maxSize: '50MB'
     },
     { 
       type: 'texte', 
       icon: <FileText className="w-12 h-12 text-purple-500" />,
       acceptedFormats: '.txt,.md,.pdf',
-      description: 'Écrivez votre texte ou téléchargez un fichier texte'
+      description: 'Documents texte',
+      maxSize: '5MB'
     },
     { 
       type: 'fichier', 
       icon: <File className="w-12 h-12 text-red-500" />,
       acceptedFormats: '*',
-      description: 'Téléchargez n\'importe quel type de fichier'
+      description: 'Tous types de fichiers',
+      maxSize: '50MB'
     }
   ];
 
-  const handleFileUpload = (event) => {
-    const uploadedFile = event.target.files[0];
-    if (uploadedFile && documentTitle.trim()) {
+  const validateFile = (file, type) => {
+    if (file.size > MAX_FILE_SIZE) {
+      throw new Error(`Le fichier est trop volumineux. Taille maximum : ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
+    }
+
+    if (type === 'image' && !ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      throw new Error('Format d\'image non supporté');
+    }
+
+    if (type === 'video' && !ALLOWED_VIDEO_TYPES.includes(file.type)) {
+      throw new Error('Format vidéo non supporté');
+    }
+  };
+
+  const handleFileUpload = async (event) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const uploadedFile = event.target.files[0];
+
+      if (!uploadedFile || !documentTitle.trim()) {
+        throw new Error('Veuillez sélectionner un fichier et saisir un titre');
+      }
+
+      validateFile(uploadedFile, selectedContentType);
+
       const newFile = {
         id: Date.now(),
-        title: documentTitle,
+        title: documentTitle.trim(),
         name: uploadedFile.name,
         type: selectedContentType,
-        size: `${(uploadedFile.size / 1024).toFixed(2)} Ko`,
+        size: `${(uploadedFile.size / 1024 / 1024).toFixed(2)} MB`,
         uploadDate: new Date().toLocaleDateString(),
+        timestamp: Date.now(),
         file: uploadedFile,
         fileUrl: URL.createObjectURL(uploadedFile),
-        previewUrl: selectedContentType === 'image' ? URL.createObjectURL(uploadedFile) : null
+        previewUrl: selectedContentType === 'image' ? URL.createObjectURL(uploadedFile) : null,
+        tags: []
       };
-      setFiles([...files, newFile]);
+
+      setFiles(prev => [...prev, newFile]);
       setIsCreationModalOpen(false);
-      setDocumentTitle('');
-      setSelectedContentType(null);
+      resetForm();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleTextSubmit = () => {
-    if (textContent.trim() && documentTitle.trim()) {
+  const handleTextSubmit = useCallback(() => {
+    try {
+      setError(null);
+      if (!textContent.trim() || !documentTitle.trim()) {
+        throw new Error('Veuillez saisir un titre et du contenu');
+      }
+
+      const blob = new Blob([textContent], { type: 'text/plain' });
+      if (blob.size > 5 * 1024 * 1024) {
+        throw new Error('Le texte est trop long (max 5MB)');
+      }
+
       const newFile = {
         id: Date.now(),
-        title: documentTitle,
-        name: 'Texte',
+        title: documentTitle.trim(),
+        name: `${documentTitle.trim()}.txt`,
         type: 'texte',
-        size: `${textContent.length} caractères`,
+        size: `${(blob.size / 1024).toFixed(2)} KB`,
         uploadDate: new Date().toLocaleDateString(),
-        content: textContent
+        timestamp: Date.now(),
+        content: textContent,
+        file: blob,
+        fileUrl: URL.createObjectURL(blob),
+        tags: []
       };
-      setFiles([...files, newFile]);
-      setTextContent('');
-      setDocumentTitle('');
+
+      setFiles(prev => [...prev, newFile]);
+      resetForm();
       setIsCreationModalOpen(false);
-      setSelectedContentType(null);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [textContent, documentTitle]);
+
+  const resetForm = () => {
+    setTextContent('');
+    setDocumentTitle('');
+    setSelectedContentType(null);
+    setError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
-  const handleFileView = (file) => {
-    setSelectedFile(file);
-  };
+  const handleDelete = useCallback((fileId) => {
+    setFiles(prev => prev.filter(f => f.id !== fileId));
+    if (selectedFile?.id === fileId) {
+      setSelectedFile(null);
+    }
+  }, [selectedFile]);
 
-  const renderFilePreview = () => {
+  const handleDownload = useCallback((file) => {
+    const link = document.createElement('a');
+    link.href = file.fileUrl;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, []);
+
+  const filteredAndSortedFiles = files
+    .filter(file => {
+      const searchLower = searchQuery.toLowerCase();
+      return (
+        file.title.toLowerCase().includes(searchLower) ||
+        file.name.toLowerCase().includes(searchLower)
+      );
+    })
+    .sort((a, b) => {
+      const order = sortOrder === 'asc' ? 1 : -1;
+      switch (sortBy) {
+        case 'name':
+          return order * a.title.localeCompare(b.title);
+        case 'size':
+          return order * (parseFloat(a.size) - parseFloat(b.size));
+        case 'type':
+          return order * a.type.localeCompare(b.type);
+        default:
+          return order * (a.timestamp - b.timestamp);
+      }
+    });
+
+  const ErrorAlert = ({ message }) => (
+    <Alert variant="destructive" className="mb-4">
+      <AlertTriangle className="h-4 w-4" />
+      <AlertDescription>{message}</AlertDescription>
+    </Alert>
+  );
+
+  const FilePreview = () => {
     if (!selectedFile) return null;
 
     return (
-      <div className={`fixed inset-0 z-50 flex items-center justify-center ${isDarkMode ? 'bg-gray-900 bg-opacity-90' : 'bg-black bg-opacity-70'}`}>
-        <div className={`w-3/4 max-w-4xl ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white'} rounded-lg p-6 relative shadow-2xl`}>
-          <button 
-            onClick={() => setSelectedFile(null)}
-            className={`absolute top-4 right-4 ${isDarkMode ? 'text-white hover:bg-gray-700' : 'text-black hover:bg-gray-100'} p-2 rounded-full transition`}
-          >
-            <X />
-          </button>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90">
+        <div className="w-4/5 max-w-5xl bg-gray-900 rounded-2xl p-8 relative">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+              {selectedFile.title}
+            </h2>
+            <div className="flex gap-4">
+              <button 
+                onClick={() => handleDownload(selectedFile)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center gap-2 transition-colors"
+              >
+                <Download size={20} />
+                Télécharger
+              </button>
+              <button 
+                onClick={() => handleDelete(selectedFile.id)}
+                className="p-2 bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors"
+              >
+                <Trash2 size={20} />
+              </button>
+              <button 
+                onClick={() => setSelectedFile(null)}
+                className="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-xl transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
 
-          <h2 className="text-2xl font-bold mb-4 flex items-center">
-            {selectedFile.type === 'image' && <Image className="mr-2 text-blue-500" />}
-            {selectedFile.type === 'video' && <Video className="mr-2 text-green-500" />}
-            {selectedFile.type === 'texte' && <FileText className="mr-2 text-purple-500" />}
-            {selectedFile.title}
-          </h2>
-
-          {selectedFile.type === 'image' && (
-            <img 
-              src={selectedFile.previewUrl} 
-              alt={selectedFile.name} 
-              className="max-w-full max-h-[70vh] mx-auto object-contain rounded-lg shadow-md"
-            />
-          )}
-
-          {selectedFile.type === 'video' && (
-            <div className="video-container">
+          <div className="bg-gray-800 rounded-xl p-6 shadow-lg">
+            {selectedFile.type === 'image' && (
+              <img 
+                src={selectedFile.previewUrl} 
+                alt={selectedFile.name} 
+                className="max-w-full max-h-[70vh] mx-auto object-contain rounded-lg"
+              />
+            )}
+            {selectedFile.type === 'video' && (
               <video 
-                ref={videoRef}
                 controls 
-                className="max-w-full max-h-[70vh] mx-auto rounded-lg shadow-md"
+                className="max-w-full max-h-[70vh] mx-auto rounded-lg"
                 src={selectedFile.fileUrl}
               >
                 Votre navigateur ne supporte pas la lecture vidéo.
               </video>
-            </div>
-          )}
+            )}
+            {selectedFile.type === 'texte' && (
+              <pre className="overflow-auto p-6 bg-gray-700 rounded-lg max-h-[70vh] text-gray-100 font-mono">
+                {selectedFile.content}
+              </pre>
+            )}
+          </div>
 
-          {selectedFile.type === 'texte' && (
-            <pre className={`overflow-auto p-4 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'} rounded-lg max-h-[70vh]`}>
-              {selectedFile.content || 'Contenu du fichier'}
-            </pre>
-          )}
+          <div className="mt-4 text-gray-400 text-sm">
+            <p>Taille: {selectedFile.size}</p>
+            <p>Uploadé le: {selectedFile.uploadDate}</p>
+          </div>
         </div>
       </div>
     );
   };
 
-  const renderCreationModal = () => (
-    <div className={`fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center ${isCreationModalOpen ? 'block' : 'hidden'}`}>
-      <div className={`${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white'} rounded-xl p-6 w-[500px] shadow-2xl`}>
-        <h2 className="text-2xl font-bold mb-4 flex items-center">
-          <Tag className="mr-2 text-blue-500" /> Créer un nouveau contenu
+  const CreationModal = () => (
+    <div className={`fixed inset-0 z-50 flex items-center justify-center ${isCreationModalOpen ? '' : 'hidden'}`}>
+      <div className="absolute inset-0 bg-black bg-opacity-90" onClick={() => setIsCreationModalOpen(false)} />
+      <div className="relative bg-gray-900 rounded-2xl p-8 w-[600px] max-w-[90vw]">
+        <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+          <Tag className="text-blue-500" />
+          Nouveau contenu
         </h2>
         
-        {/* Titre du document */}
-        <div className="mb-4">
-          <label className="block mb-2 font-semibold">Titre du document</label>
+        {error && <ErrorAlert message={error} />}
+
+        <div className="space-y-6">
           <input 
             type="text"
             value={documentTitle}
             onChange={(e) => setDocumentTitle(e.target.value)}
-            placeholder="Saisissez un titre pour votre document"
-            className={`w-full p-3 border-2 rounded-lg focus:ring-2 ${
-              isDarkMode 
-                ? 'bg-gray-700 border-gray-600 focus:ring-blue-500' 
-                : 'bg-white border-gray-300 focus:border-blue-500'
-            }`}
+            placeholder="Titre du document"
+            className="w-full p-4 bg-gray-800 border border-gray-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
+          
+          {!selectedContentType ? (
+            <div className="grid grid-cols-2 gap-4">
+              {contentTypes.map((type) => (
+                <button
+                  key={type.type}
+                  onClick={() => setSelectedContentType(type.type)}
+                  className="flex flex-col items-center p-6 bg-gray-800 rounded-xl border border-gray-700 hover:border-blue-500 transition duration-300"
+                  disabled={!documentTitle}
+                >
+                  {type.icon}
+                  <span className="mt-3 text-white capitalize">{type.type}</span>
+                  <span className="mt-1 text-gray-400 text-sm">Max: {type.maxSize}</span>
+                </button>
+              ))}
+            </div>
+          ) : selectedContentType === 'texte' ? (
+            <div className="space-y-4">
+              <textarea
+                value={textContent}
+                onChange={(e) => setTextContent(e.target.value)}
+                placeholder="Saisissez votre texte ici..."
+                className="w-full h-48 p-4 bg-gray-800 border border-gray-700 rounded-xl text-white resize-none"
+              />
+              <div className="flex justify-end gap-4">
+                <button 
+                  onClick={() => setSelectedContentType(null)}
+                  className="px-6 py-3 bg-gray-800 text-white rounded-xl hover:bg-gray-700 transition-colors"
+                >
+                  Retour
+                </button>
+                <button 
+                  onClick={handleTextSubmit}
+                  disabled={loading || !textContent.trim()}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  Publier
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <input 
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept={contentTypes.find(ct => ct.type === selectedContentType)?.acceptedFormats}
+                className="w-full p-4 bg-gray-800 border border-gray-700 rounded-xl text-white"
+              />
+              <div className="flex justify-end gap-4">
+                <button 
+                  onClick={() => setSelectedContentType(null)}
+                  className="px-6 py-3 bg-gray-800 text-white rounded-xl hover:bg-gray-700 transition-colors"
+                >
+                  Retour
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-        
-        {!selectedContentType && (
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            {contentTypes.map((contentType) => (
-              <button
-                key={contentType.type}
-                onClick={() => setSelectedContentType(contentType.type)}
-                className={`flex flex-col items-center p-4 border-2 rounded-lg transition duration-300 group ${
-                  isDarkMode 
-                    ? 'border-gray-600 hover:bg-gray-700 hover:border-blue-500' 
-                    : 'border-gray-300 hover:bg-gray-100 hover:border-blue-500'
-                } ${!documentTitle ? 'opacity-50 cursor-not-allowed' : ''}`}
-                disabled={!documentTitle}
-              >
-                {contentType.icon}
-                <span className="mt-2 capitalize group-hover:text-blue-500">{contentType.type}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {selectedContentType === 'texte' && (
-          <div>
-            <p className="mb-2 text-sm text-gray-500">{contentTypes.find(ct => ct.type === 'texte').description}</p>
-            <textarea
-              value={textContent}
-              onChange={(e) => setTextContent(e.target.value)}
-              placeholder="Saisissez votre texte ici..."
-              className={`w-full h-40 p-3 border-2 rounded-lg ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}
-            />
-            <div className="flex justify-between mt-4">
-              <button 
-                onClick={handleTextSubmit}
-                className={`bg-blue-500 text-white px-4 py-2 rounded-lg ${isDarkMode ? 'hover:bg-blue-600' : 'hover:bg-blue-600'}`}
-                disabled={!textContent.trim()}
-              >
-                Enregistrer
-              </button>
-              <button 
-                onClick={() => {
-                  setSelectedContentType(null);
-                  setTextContent('');
-                }}
-                className={`${isDarkMode ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'} px-4 py-2 rounded-lg`}
-              >
-                Annuler
-              </button>
-            </div>
-          </div>
-        )}
-
-        {(selectedContentType === 'image' || selectedContentType === 'video' || selectedContentType === 'fichier') && (
-          <div>
-            <p className="mb-2 text-sm text-gray-500">
-              {contentTypes.find(ct => ct.type === selectedContentType).description}
-            </p>
-            <input 
-              type="file" 
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              accept={contentTypes.find(ct => ct.type === selectedContentType)?.acceptedFormats}
-              className={`w-full p-3 border-2 rounded-lg ${
-                isDarkMode 
-                  ? 'bg-gray-700 border-gray-600' 
-                  : 'bg-white border-gray-300'
-              }`}
-            />
-            <div className="flex justify-between mt-4">
-              <button 
-                onClick={() => setSelectedContentType(null)}
-                className={`${isDarkMode ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'} px-4 py-2 rounded-lg`}
-              >
-                Retour
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
 
   return (
-    <div className={`min-h-screen ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gradient-to-br from-gray-50 to-gray-100'} p-8`}>
-      <div className="container mx-auto max-w-6xl">
-        <header className="flex justify-between items-center mb-8">
-          <div className="flex items-center">
-            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-white p-8">
+      <div className="max-w-7xl mx-auto">
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+          <div className="flex items-center gap-4">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent">
               IPCS'host
             </h1>
-            <span className="ml-4 text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded-full">Bêta</span>
+            <span className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-sm font-medium">
+              Bêta
+            </span>
           </div>
-          <div className="flex items-center space-x-4">
-            <button 
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className={`p-2 rounded-full transition duration-300 ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'}`}
-            >
-              {isDarkMode ? <Sun className="text-yellow-400" /> : <Moon className="text-gray-700" />}
-            </button>
-            <button 
-              onClick={() => setIsCreationModalOpen(true)}
-              className={`text-white px-4 py-2 rounded-full flex items-center transition duration-300 ${isDarkMode ? 'bg-blue-700 hover:bg-blue-800' : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'}`}
-            >
-              <Plus className="mr-2" /> Créer
-            </button>
+
+          <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+            <div className="relative flex-grow md:max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type="text"
+                placeholder="Rechercher..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <div className="flex bg-gray-800/50 rounded-xl p-1">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-2 rounded-lg transition-colors ${
+                    viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <Grid size={20} />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 rounded-lg transition-colors ${
+                    viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <List size={20} />
+                </button>
+              </div>
+
+              <button
+                onClick={() => setIsDarkMode(!isDarkMode)}
+                className="p-2 bg-gray-800/50 rounded-xl hover:bg-gray-700 transition-colors"
+              >
+                {isDarkMode ? <Sun className="text-yellow-500" /> : <Moon className="text-gray-300" />}
+              </button>
+
+              <button
+                onClick={() => setIsCreationModalOpen(true)}
+                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl hover:opacity-90 transition-all flex items-center gap-2 shadow-lg hover:shadow-blue-500/20"
+              >
+                <Plus size={20} />
+                Créer
+              </button>
+            </div>
           </div>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {files.map((file) => (
-            <div 
-              key={file.id} 
-              onClick={() => handleFileView(file)}
-              className={`cursor-pointer rounded-xl shadow-lg transform transition duration-300 hover:scale-105 hover:shadow-xl group ${
-                isDarkMode 
-                  ? 'bg-gray-800 hover:bg-gray-700 border border-gray-700' 
-                  : 'bg-white hover:bg-gray-50 border'
-              }`}
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500"
             >
-              <div className="p-4 flex items-center">
-                {file.type === 'image' && <Image className="mr-4 text-blue-500 group-hover:text-blue-600" />}
-                {file.type === 'video' && <Video className="mr-4 text-green-500 group-hover:text-green-600" />}
-                {file.type === 'texte' && <FileText className="mr-4 text-purple-500 group-hover:text-purple-600" />}
-                {file.type === 'fichier' && <File className="mr-4 text-red-500 group-hover:text-red-600" />}
-                
-                <div>
-                  <p className="font-bold text-lg mb-1 group-hover:text-blue-600">{file.title}</p>
-                  <p className="text-sm font-medium">{file.name}</p>
-                  <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    {file.size} - {file.uploadDate}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))}
+              <option value="date">Date</option>
+              <option value="name">Nom</option>
+              <option value="size">Taille</option>
+              <option value="type">Type</option>
+            </select>
+            <button
+              onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+              className="p-2 bg-gray-800/50 rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              {sortOrder === 'asc' ? '↑' : '↓'}
+            </button>
+          </div>
+
+          {filteredAndSortedFiles.length > 0 && (
+            <p className="text-gray-400">
+              {filteredAndSortedFiles.length} fichier{filteredAndSortedFiles.length > 1 ? 's' : ''}
+            </p>
+          )}
         </div>
 
-        {renderCreationModal()}
-        {renderFilePreview()}
+        {filteredAndSortedFiles.length === 0 ? (
+          <div className="text-center py-16 bg-gray-800/30 rounded-2xl border-2 border-dashed border-gray-700">
+            <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+            <h3 className="text-xl font-medium text-gray-300 mb-2">Aucun fichier</h3>
+            <p className="text-gray-400 mb-6">Commencez par créer ou uploader un fichier</p>
+            <button
+              onClick={() => setIsCreationModalOpen(true)}
+              className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors inline-flex items-center gap-2"
+            >
+              <Plus size={20} />
+              Créer
+            </button>
+          </div>
+        ) : (
+          <div className={viewMode === 'grid' ? 
+            'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 
+            'flex flex-col gap-4'
+          }>
+            {filteredAndSortedFiles.map((file) => (
+              <div
+                key={file.id}
+                onClick={() => setSelectedFile(file)}
+                className={`group cursor-pointer bg-gray-800/50 backdrop-blur-sm ${
+                  viewMode === 'grid' 
+                    ? 'rounded-xl p-6 border border-gray-700 hover:border-blue-500' 
+                    : 'rounded-xl p-4 border border-gray-700 hover:border-blue-500'
+                } transition duration-300 hover:shadow-lg hover:shadow-blue-500/10`}
+              >
+                <div className={`flex items-start ${viewMode === 'grid' ? 'flex-col gap-4' : 'gap-4'}`}>
+                  <div className={`${viewMode === 'grid' ? 'w-full' : 'flex-shrink-0'}`}>
+                    {file.type === 'image' && <Image className="text-blue-500 h-8 w-8" />}
+                    {file.type === 'video' && <Video className="text-green-500 h-8 w-8" />}
+                    {file.type === 'texte' && <FileText className="text-purple-500 h-8 w-8" />}
+                    {file.type === 'fichier' && <File className="text-red-500 h-8 w-8" />}
+                  </div>
+
+                  <div className="flex-grow min-w-0">
+                    <h3 className="text-lg font-semibold truncate group-hover:text-blue-400 transition">
+                      {file.title}
+                    </h3>
+                    <p className="text-gray-400 text-sm mt-1 truncate">{file.name}</p>
+                    <div className="flex items-center gap-4 mt-2">
+                      <p className="text-gray-500 text-xs">{file.size}</p>
+                      <p className="text-gray-500 text-xs">{file.uploadDate}</p>
+                    </div>
+                  </div>
+
+                  {viewMode === 'list' && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownload(file);
+                        }}
+                        className="p-2 text-gray-400 hover:text-blue-500 transition-colors"
+                      >
+                        <Download size={20} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(file.id);
+                        }}
+                        className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      <CreationModal />
+      <FilePreview />
     </div>
   );
 };
