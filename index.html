@@ -1,32 +1,35 @@
-import React, { useState, useRef, useEffect } from 'react';
-import ReactDOM from 'react-dom';
-import { 
-  Upload, 
-  File, 
-  Folder, 
-  Plus, 
-  Image, 
-  Video, 
-  FileText, 
-  Code,
-  Moon,
-  Sun,
-  Tag,
-  X,
-  PlayCircle 
-} from 'lucide-react';
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IPCS'host</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body {
+      background-color: #1a202c; /* Couleur de fond sombre */
+      color: #ffffff; /* Couleur du texte */
+    }
+    .card {
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .card:hover {
+      transform: scale(1.05);
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module">
+    // Intégration du script JavaScript fourni
+    import { createRoot } from 'react-dom/client';
+    import IPCSHost from './script.js';
 
-const IPCSHost = () => {
-  // ... (votre code existant)
-
-  return (
-    <div className={`min-h-screen ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gradient-to-br from-gray-50 to-gray-100'} p-8`}>
-      {/* ... (votre code existant) */}
-    </div>
-  );
-};
-
-// Rendu du composant IPCSHost dans la div root
-ReactDOM.render(<IPCSHost />, document.getElementById('root'));
-
-export default IPCSHost;
+    // Rendu du composant IPCSHost dans la div root
+    const root = createRoot(document.getElementById('root'));
+    root.render(<IPCSHost />);
+  </script>
+</body>
+</html>
