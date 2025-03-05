@@ -1,0 +1,32 @@
+import React, { useState, useRef, useEffect } from 'react';
+import ReactDOM from 'react-dom';
+import { 
+  Upload, 
+  File, 
+  Folder, 
+  Plus, 
+  Image, 
+  Video, 
+  FileText, 
+  Code,
+  Moon,
+  Sun,
+  Tag,
+  X,
+  PlayCircle 
+} from 'lucide-react';
+
+const IPCSHost = () => {
+  // ... (votre code existant)
+
+  return (
+    <div className={`min-h-screen ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gradient-to-br from-gray-50 to-gray-100'} p-8`}>
+      {/* ... (votre code existant) */}
+    </div>
+  );
+};
+
+// Rendu du composant IPCSHost dans la div root
+ReactDOM.render(<IPCSHost />, document.getElementById('root'));
+
+export default IPCSHost;
